@@ -16,7 +16,7 @@ typedef enum {
 	LETTER_SPACE,
 	WORD_SPACE,
 	NEW_LINE,
-	IDLE_STATE
+	// IDLE_STATE
 } sign_t;
 
 #endif

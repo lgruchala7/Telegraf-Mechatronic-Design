@@ -1,9 +1,18 @@
+#define DEBUG_MODE
+
+// #define TEST
+#ifndef TEST
+
+
 #include "hFramework.h"
-#include <stddef.h>
 #include <stdio.h>
 #include "Lego_Touch.h"
 #include "letters.h"
 #include "tasks.h"
+
+#define MAX_SIGNS 50
+#define MAX_LETTERS 10
+#define TIME_UNIT 100
 
 using namespace hSensors;
 
@@ -15,6 +24,7 @@ hSemaphore readyToWriteSema;
 
 hMutex dotsAndDashesMutex;	//mutexes
 hMutex lettersMutex;
+hMutex signsMutex;
 
 hQueue<sign_t> dots_and_dashes(MAX_SIGNS);
 hQueue<char> letters(MAX_LETTERS);
@@ -50,10 +60,17 @@ void buttonTask(void)
 				dots_and_dashes.sendToBack(space);	//add new data to the queue
 				dotsAndDashesMutex.give();
 
-				readyToDecodeSema.give();	//signal decodeTask about new letter available
+			#ifdef DEBUG_MODE
+			printf("Space: %d\n\r", (int)space);
+			#endif
+
+			readyToDecodeSema.give();	//signal decodeTask about new letter available
 			}
 
 			wasButtonPressed = true;
+			#ifdef DEBUG_MODE
+			// printf("Button pressed\n\r");
+			#endif
 		}
 		else if (!isButtonPressed && wasButtonPressed)	//button not pressed (falling edge)
 		{
@@ -61,6 +78,9 @@ void buttonTask(void)
 			pressing_time_ms = stop_time_ms - start_time_ms;	//calculate pressing time
 
 			wasButtonPressed = false;
+			#ifdef DEBUG_MODE
+			// printf("Button released\n\r");
+			#endif
 		}
 
 		if (pressing_time_ms != 0)	//decide what to do depending on the time of pressing
@@ -71,11 +91,15 @@ void buttonTask(void)
 			dots_and_dashes.sendToBack(sign);	//add new data to the queue
 			dotsAndDashesMutex.give();
 
+			#ifdef DEBUG_MODE
+			printf("Pressing time: %d ms\n\r", (int)pressing_time_ms);
+			printf("Sign: %d\n\r", (int)sign);
+			#endif
 			// readyToDecodeSema.give();	//signal decodeTask about new data
 			pressing_time_ms = 0ull;
 		}
-
-		sys.delay_ms(20);	//debouncing
+		
+		sys.delay(20);	//debouncing
 	}
 	
 }
@@ -86,16 +110,34 @@ void decodeTask(void)
 	sign_t sign;
 	char letter;
 
-	readyToDecodeSema.take();
-	do 
+	#ifdef DEBUG_MODE
+	printf("Decoding 1\n");
+	#endif
+for(;;)
+{
+	// readyToDecodeSema.take();
+	if (dots_and_dashes.getElementCnt() != 0u)
+{	do 
 	{
+		dotsAndDashesMutex.take();
 		dots_and_dashes.receive(sign);
+		dotsAndDashesMutex.give();
+
+		lettersMutex.take();
 		signs.sendToBack(sign);
+		lettersMutex.give();
+		#ifdef DEBUG_MODE
+		printf("Decoding 2\n");
+		#endif
 	} while (sign < LETTER_SPACE && (signs.getElementCnt() < 7));	//read until at least end of letter reached 
 																	//or too many signs sent without break
-	letter = whichLetter(signs);
+	letter = whichLetter();
 
-	if (letter != NULL)
+	#ifdef DEBUG_MODE
+	printf("Letter: %c\n\n\r", letter);
+	#endif
+
+	if (letter != (char)NULL)
 	{
 		lettersMutex.take();
 		letters.sendToBack(letter);
@@ -103,6 +145,8 @@ void decodeTask(void)
 	}
 
 	signs.flush();
+}
+}
 }
 
 
@@ -130,3 +174,5 @@ void writeTask(void)
 		}
 	}
 }
+
+#endif
