@@ -1,13 +1,14 @@
 #ifndef TASKS_H
 #define TASKS_H
 
-#define MAX_SIGNS 50
-#define MAX_LETTERS 10
-#define TIME_UNIT 100
-
 void buttonTask(void);
 void decodeTask(void);
 void writeTask(void);
+
+#define MAX_SIGNS 50
+#define MAX_LETTERS 20
+#define TIME_UNIT 100
+
 
 typedef enum {
 	DOT,
@@ -16,7 +17,6 @@ typedef enum {
 	LETTER_SPACE,
 	WORD_SPACE,
 	NEW_LINE,
-	// IDLE_STATE
 } sign_t;
 
 #endif

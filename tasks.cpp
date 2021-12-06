@@ -10,10 +10,6 @@
 #include "letters.h"
 #include "tasks.h"
 
-#define MAX_SIGNS 50
-#define MAX_LETTERS 10
-#define TIME_UNIT 100
-
 using namespace hSensors;
 
 hLegoSensor_simple ls(hSens5);	//button
@@ -36,16 +32,21 @@ void buttonTask(void)
 	sign_t sign;
 	sign_t space;
 	bool isButtonPressed, wasButtonPressed;
+	bool ishButton1Pressed, ishButton2Pressed, washButton1Pressed, washButton2Pressed;
 	uint64_t start_time_ms, stop_time_ms, space_time_ms;
 	uint64_t pressing_time_ms;
 
 	wasButtonPressed = false;
+	washButton1Pressed = false;
+	washButton2Pressed = false;
 	pressing_time_ms = 0ull;
 	stop_time_ms = 0ull;
 
 	for (;;)
 	{
 		isButtonPressed = button.isPressed();
+		ishButton1Pressed = hBtn1.isPressed();
+		ishButton2Pressed = hBtn2.isPressed();
 
 		if (isButtonPressed && !wasButtonPressed)	//button pressed (rising edge)
 		{
@@ -54,23 +55,31 @@ void buttonTask(void)
 
 			space = whichSpace(space_time_ms);	//determine space time
 
-			if (space >= LETTER_SPACE)
+			#ifdef DEBUG_MODE
+			// printf("\n\nSpace: %d\n\r", (int)space);
+			// printf("Stop time: %d ms\n\r", (int)stop_time_ms);
+			// printf("dots_and_dashes count: %d\n\r", (int)dots_and_dashes.getElementCnt());
+			#endif
+
+			if (space >= LETTER_SPACE && (stop_time_ms != 0u))
 			{
-				dotsAndDashesMutex.take();
+				dotsAndDashesMutex.take(0);
 				dots_and_dashes.sendToBack(space);	//add new data to the queue
 				dotsAndDashesMutex.give();
 
-			#ifdef DEBUG_MODE
-			printf("Space: %d\n\r", (int)space);
-			#endif
+				#ifdef DEBUG_MODE
+				if (sign == LETTER_SPACE)
+					printf("letter space\n\r");
+				else if (sign == WORD_SPACE)
+					printf("word space\n\r");
+				#endif
 
-			readyToDecodeSema.give();	//signal decodeTask about new letter available
+				readyToDecodeSema.give();	//signal decodeTask about new letter available
+
+				printf("BUTTON_TASK: ");
 			}
 
 			wasButtonPressed = true;
-			#ifdef DEBUG_MODE
-			// printf("Button pressed\n\r");
-			#endif
 		}
 		else if (!isButtonPressed && wasButtonPressed)	//button not pressed (falling edge)
 		{
@@ -83,18 +92,46 @@ void buttonTask(void)
 			#endif
 		}
 
+		// if (ishButton1Pressed && !washButton1Pressed)
+		// {
+		// 	dotsAndDashesMutex.take(0);
+		// 	dots_and_dashes.sendToBack(WORD_SPACE);	//add new data to the queue
+		// 	dotsAndDashesMutex.give();
+
+		// 	washButton1Pressed = ishButton1Pressed;
+		// }
+		// else if (ishButton2Pressed && !washButton2Pressed)
+		// {
+		// 	dotsAndDashesMutex.take(0);
+		// 	dots_and_dashes.sendToBack(NEW_LINE);	//add new data to the queue
+		// 	dotsAndDashesMutex.give();
+
+		// 	washButton2Pressed = ishButton2Pressed;
+		// }
+
 		if (pressing_time_ms != 0)	//decide what to do depending on the time of pressing
 		{
 			sign = whichSign(pressing_time_ms);	//determine input sign (dot/dash)
 
-			dotsAndDashesMutex.take();
+			dotsAndDashesMutex.take(0);
 			dots_and_dashes.sendToBack(sign);	//add new data to the queue
 			dotsAndDashesMutex.give();
 
 			#ifdef DEBUG_MODE
-			printf("Pressing time: %d ms\n\r", (int)pressing_time_ms);
-			printf("Sign: %d\n\r", (int)sign);
+			// printf("Pressing time: %d ms\n\r", (int)pressing_time_ms);
+			printf("BUTTON_TASK: ");
+			if (sign == DOT)
+				printf(". ");
+			else if (sign == DASH)
+				printf("- ");
+			else if (sign == WORD_SPACE)
+				printf("word space ");
+			else if (sign == NEW_LINE)
+				printf("\\n");
+
+				printf("\npressing time = %d\n", (int)pressing_time_ms);
 			#endif
+
 			// readyToDecodeSema.give();	//signal decodeTask about new data
 			pressing_time_ms = 0ull;
 		}
@@ -113,64 +150,99 @@ void decodeTask(void)
 	#ifdef DEBUG_MODE
 	printf("Decoding 1\n");
 	#endif
-for(;;)
-{
-	// readyToDecodeSema.take();
-	if (dots_and_dashes.getElementCnt() != 0u)
-{	do 
+
+	for(;;)
 	{
-		dotsAndDashesMutex.take();
-		dots_and_dashes.receive(sign);
-		dotsAndDashesMutex.give();
+		if (readyToDecodeSema.take(0))
+		{
+			#ifdef DEBUG_MODE
+			printf("\nDECODE_TASK: ");
+			#endif
+			
+			do {	
+				do {
+				dotsAndDashesMutex.take(0);
+				dots_and_dashes.receive(sign);
+				// dotsAndDashesMutex.give();
 
-		lettersMutex.take();
-		signs.sendToBack(sign);
-		lettersMutex.give();
-		#ifdef DEBUG_MODE
-		printf("Decoding 2\n");
-		#endif
-	} while (sign < LETTER_SPACE && (signs.getElementCnt() < 7));	//read until at least end of letter reached 
-																	//or too many signs sent without break
-	letter = whichLetter();
+				#ifdef DEBUG_MODE
+				if (sign == DOT)
+					printf(". ");
+				else if (sign == DASH)
+					printf("- ");
+				else if (sign == LETTER_SPACE)
+					printf("letter space ");
+				#endif
 
-	#ifdef DEBUG_MODE
-	printf("Letter: %c\n\n\r", letter);
-	#endif
+				lettersMutex.take(0);
+				signs.sendToBack(sign);
+				lettersMutex.give();
+				} while (sign < LETTER_SPACE && (signs.getElementCnt() < 7));	//read until at least end of letter reached 
+																				//or too many signs sent without break
+				letter = whichLetter();
 
-	if (letter != (char)NULL)
-	{
-		lettersMutex.take();
-		letters.sendToBack(letter);
-		lettersMutex.give();
+				#ifdef DEBUG_MODE
+				printf("\nLetter: %c\n\n\r", letter);
+				#endif
+
+				if (letter != (char)0)
+				{
+					lettersMutex.take(0);
+					letters.sendToBack(letter);
+					lettersMutex.give();
+					#ifdef DEBUG_MODE
+					printf("Sending letter to write\n");
+					#endif
+					readyToWriteSema.give();
+				}
+
+				#ifdef DEBUG_MODE
+				else
+					printf("\nERROR\n\n\r");
+				#endif
+
+				signs.flush();
+			} while((int)dots_and_dashes.getElementCnt() > 0);
+
+			dotsAndDashesMutex.give();
+		}
 	}
-
-	signs.flush();
-}
-}
 }
 
 
 void writeTask(void)
 {
 	char letter;
-	bool new_data;
-	uint8_t letters_in_a_row = 0u;
+	int letters_in_a_row = 0;
 
 	for (;;)
 	{
-		dotsAndDashesMutex.take();
-		new_data = letters.receive(letter);	// read decoded letters from the queue
-		dotsAndDashesMutex.give();
-
-		if (new_data)		//start writing if new letters available
+		if (readyToWriteSema.take(0))
 		{
+			lettersMutex.take(0);
+			letters.receive(letter);	// read decoded letters from the queue
+			lettersMutex.give();
+
 			write(letter);
-			if (letters_in_a_row == 5u)
+			++letters_in_a_row;
+			
+			if (letter == ' ')
+			{
+				/* do nothing */
+			}
+			else if (letter == '\n')
+			{
+				letters_in_a_row = 0u;
+			}
+			else if (letters_in_a_row == 5)
 			{
 				write('\n');
 				letters_in_a_row = 0u;
 			}
-			++letters_in_a_row;
+			else
+			{
+				writeSpace();
+			}
 		}
 	}
 }
